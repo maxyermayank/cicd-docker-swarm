@@ -69,6 +69,12 @@ docker service ls
 ```
 ![](images/ServiceStatus.png)
 
+## **Open Traefik Dashboard in Browser**
+```
+open http://test.company.com:8080/
+```
+![](images/TraefikHome.png)
+
 ## **Open Jenkins Master in Browser**
 ```
 open http://test.company.com/jenkins/
