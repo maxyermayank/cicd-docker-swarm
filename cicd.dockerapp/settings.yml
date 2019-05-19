@@ -1,0 +1,40 @@
+jenkins:
+  image:
+    repository: localhost:5000/jenkins
+    tag: latest
+  port: 8080
+  replicas: 1
+
+nexus:
+  image:
+    repository: sonatype/nexus3
+    tag: latest
+  context: nexus
+  port: 8081
+  replicas: 1
+
+sonarqube:
+  image:
+    repository: sonarqube
+    tag: 7.7-community
+  port: 9000
+  replicas: 1
+
+postgres:
+  image:
+    repository: postgres
+    tag: 9-alpine
+  port: 5432
+  username: admin
+  password_file: /run/secrets/postgres-passwd
+  database: cicd
+  data_dir: /var/lib/postgresql/data
+  replicas: 1
+
+ingress:
+  host: test.company.com
+  path: 
+    jenkins: jenkins
+    nexus: /
+    sonarqube: /sonarqube
+

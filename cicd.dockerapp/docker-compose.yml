@@ -1,0 +1,226 @@
+version: "3.7"
+
+services:
+  jenkins:
+    image: ${jenkins.image.repository}:${jenkins.image.tag}
+    environment: 
+      JENKINS_PREFIX: ${ingress.path.jenkins}
+      UID_JENKINS: 1000
+      GID_JENKINS: 1000
+      JAVA_OPTS: "-Xmx256m -Djenkins.install.runSetupWizard=false -Djava.util.logging.config.file=/var/jenkins_home/log.properties -Dhudson.footerURL=http://google.com -Djava.awt.headless=true -Dhudson.model.DirectoryBrowserSupport.CSP='' -Djenkins.security.FrameOptionsPageDecorator.enabled=false -Dhudson.model.ParametersAction.safeParameters='ghprbActualCommit,ghprbActualCommitAuthor,ghprbActualCommitAuthorEmail,ghprbAuthorRepoGitUrl,ghprbCommentBody,ghprbCredentialsId,ghprbGhRepository,ghprbPullAuthorEmail,ghprbPullAuthorLogin,ghprbPullAuthorLoginMention,ghprbPullDescription,ghprbPullId,ghprbPullLink,ghprbPullLongDescription,ghprbPullTitle,ghprbSourceBranch,ghprbTargetBranch,ghprbTriggerAuthor,ghprbTriggerAuthorEmail,ghprbTriggerAuthorLogin,ghprbTriggerAuthorLoginMention,GIT_BRANCH,sha1'"
+      JENKINS_OPTS: "--prefix=/${ingress.path.jenkins}"
+    volumes:
+      - type: volume
+        source: jenkins-data
+        target: /var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    secrets:
+      - jenkins_username
+      - jenkins_password
+    ports:
+      - target: ${jenkins.port}
+        published: 8877
+        mode: ingress
+      - target: 50000
+        published: 50000
+        mode: ingress
+    deploy:
+      replicas: ${jenkins.replicas}
+      labels:
+        traefik.protocol: http
+        traefik.port: '${jenkins.port}'
+        traefik.frontend.entryPoints: http,https
+        traefik.frontend.rule: "Host:${ingress.host};PathPrefix:/${ingress.path.jenkins}/"
+        traefik.docker.network: traefik
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 10s
+      update_config:
+        parallelism: 1
+        failure_action: rollback
+        delay: 15s
+    networks:
+      - app
+      - traefik
+  postgres:
+    image: ${postgres.image.repository}:${postgres.image.tag}
+    environment:
+      POSTGRES_USER: ${postgres.username}
+      POSTGRES_PASSWORD_FILE: ${postgres.password_file}
+      POSTGRES_DB: ${postgres.database}
+      PGDATA: ${postgres.data_dir}
+    ports:
+      - target: ${postgres.port}
+        published: ${postgres.port}
+        mode: ingress
+    volumes:
+      - type: volume
+        source: postgres_data
+        target: /var/lib/postgresql/data
+    secrets:
+      - source: pg_password
+        target: /run/secrets/postgres-passwd
+    deploy:
+      replicas: ${postgres.replicas}
+      update_config:
+        parallelism: 1
+        failure_action: rollback
+        delay: 15s
+    networks:
+      - database
+      - traefik
+  nexus:
+    image: ${nexus.image.repository}:${nexus.image.tag}
+    environment: 
+      NEXUS_CONTEXT: ${nexus.context}
+    volumes:
+      - type: volume
+        source: nexus-data
+        target: /nexus-data
+    # configs:
+    #   - source: nexus_config
+    #     target: /opt/sonatype-work/nexus/conf/nexus.xml
+    deploy:
+      replicas: ${nexus.replicas}
+      labels:
+        traefik.protocol: http
+        traefik.port: '${nexus.port}'
+        traefik.frontend.entryPoints: http,https
+        traefik.frontend.rule: "Host:${ingress.host};PathPrefixStrip:${ingress.path.nexus}"
+        traefik.docker.network: traefik
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 10s
+      update_config:
+        parallelism: 1
+        failure_action: rollback
+        delay: 15s
+    networks:
+      - app
+      - traefik
+  sonarqube:
+    image: ${sonarqube.image.repository}:${sonarqube.image.tag}
+    environment: 
+      sonar.web.context: ${ingress.path.sonarqube}
+      sonar.jdbc.username: ${postgres.username}
+      sonar.jdbc.password: admin # Docker Secret not yet supported so might need to use commmand
+      sonar.jdbc.url: "jdbc:postgresql://postgres/${postgres.database}"
+    # command: 
+    #   - sonarentrypoint.sh
+    ports:
+      - target: ${sonarqube.port}
+        published: ${sonarqube.port}
+        mode: ingress
+    volumes:
+      - type: volume
+        source: sonarqube-data
+        target: /sonarqube-data
+      - type: volume
+        source: sonarqube_logs
+        target: /opt/sonarqube/logs
+      - type: volume
+        source: sonarqube_extensions
+        target: /opt/sonarqube/extensions
+    # configs:
+    #   - source: sonarqube_conf
+    #     target: /opt/sonarqube/conf
+    deploy:
+      replicas: ${sonarqube.replicas}
+      labels:
+        traefik.protocol: http
+        traefik.port: '${sonarqube.port}'
+        traefik.frontend.entryPoints: http,https
+        traefik.frontend.rule: "Host:${ingress.host};PathPrefix:${ingress.path.sonarqube}/"
+        traefik.docker.network: traefik
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 10s
+      update_config:
+        parallelism: 1
+        failure_action: rollback
+        delay: 15s
+    networks:
+      - app
+      - traefik
+  traefik:
+    image: traefik:v1.7.9-alpine
+    command:
+      - --logLevel=DEBUG
+      # - --entryPoints=Name:http Address::80 Redirect.EntryPoint:https
+      # - --entryPoints=Name:https Address::443 TLS:/run/secrets/signedcert,/run/secrets/signedkey
+      - --insecureskipverify
+      - --docker
+      - --docker.endpoint=unix:///var/run/docker.sock
+      - --docker.swarmmode
+      - --docker.tls=false
+      - --docker.watch
+      - --docker.network=traefik
+      - --api
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 500M
+    networks:
+      - traefik
+    ports:
+      - mode: ingress
+        protocol: tcp
+        published: 80
+        target: 80
+      - mode: ingress
+        protocol: tcp
+        published: 443
+        target: 443
+      - mode: ingress
+        protocol: tcp
+        published: 8080
+        target: 8080
+    # secrets:
+    #   - source: signedcert
+    #   - source: signedkey
+    volumes:
+      - source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        type: bind
+
+volumes:
+  jenkins-data:
+  postgres_data:
+  nexus-data:
+  sonarqube-data:
+  sonarqube_logs:
+  sonarqube_extensions:
+
+networks:
+  app:
+  database:
+  traefik:
+    driver: overlay
+    name: traefik
+
+secrets:
+  jenkins_username:
+    external: true
+  jenkins_password:
+    external: true
+  pg_password:
+    external: true
+  # signedcert:
+  #   external: true
+  #   name: signedcert
+  # signedkey:
+  #   external: true
+  #   name: signedkey
+
+# configs: 
+#   nexus_config:
+#     file: configs/nexus.xml
+#   sonarqube_conf:
+#     file: configs/sonarqube.conf
