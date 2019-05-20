@@ -96,4 +96,6 @@ open http://test.company.com/sonarqube/
 <span style="color:blue">***NOTE:*** Default credential admin/admin.</span>
 
 ## **Resources**
+* [Pipeline as a Code using Jenkins 2](https://medium.com/@maxy_ermayank/pipeline-as-a-code-using-jenkins-2-aa872c6ecdce)
+* [Useful Docker Commands and Aliases](https://medium.com/faun/useful-docker-commands-and-aliases-9ea79191832f)
 * [Official Jenkins Docker image](https://github.com/jenkinsci/docker/blob/master/README.md)
